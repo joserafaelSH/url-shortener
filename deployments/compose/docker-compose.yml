@@ -1,0 +1,44 @@
+services:
+
+  # ################################################
+  # # PostgreSQL
+  # ################################################
+
+  # postgres:
+  #   image: postgres:latest
+  #   container_name: postgres
+
+  #   environment:
+  #     POSTGRES_DB: soccer
+  #     POSTGRES_USER: soccer
+  #     POSTGRES_PASSWORD: soccer
+
+  #   ports:
+  #     - "5432:5432"
+
+  #   volumes:
+  #     - postgres-data:/var/lib/postgresql
+
+  #   restart: unless-stopped
+
+  ################################################
+  # Redis Cache
+  ################################################
+
+  redis-cache:
+    image: redis:8-alpine
+    container_name: redis-cache
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - redis-cache-data:/data
+
+    restart: unless-stopped
+
+################################################
+# Volumes
+################################################
+
+volumes:
+  redis-cache-data:

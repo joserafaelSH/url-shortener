@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ import (
 func TestAllow_FirstRequestIsAllowedAndCharged(t *testing.T) {
 	limiter := NewInMemoryLimiter(10, 1.0)
 
-	ok, err := limiter.Allow("user1")
+	ok, err := limiter.Allow(context.Background(), "user1")
 	if err != nil {
 		t.Fatalf("did not expect an error, got: %v", err)
 	}
@@ -34,7 +35,7 @@ func TestAllow_BurstRespectsBucketCapacity(t *testing.T) {
 	allowed := 0
 	denied := 0
 	for i := 0; i < 25; i++ {
-		ok, err := limiter.Allow("user1")
+		ok, err := limiter.Allow(context.Background(), "user1")
 		if err != nil {
 			t.Fatalf("call %d returned an unexpected error: %v", i, err)
 		}
@@ -56,12 +57,12 @@ func TestAllow_BurstRespectsBucketCapacity(t *testing.T) {
 func TestAllow_DeniesWhenBucketIsEmpty(t *testing.T) {
 	limiter := NewInMemoryLimiter(1, 0) // capacity 1, no refill at all
 
-	ok1, _ := limiter.Allow("user1")
+	ok1, _ := limiter.Allow(context.Background(), "user1")
 	if !ok1 {
 		t.Fatal("expected the first request to be allowed")
 	}
 
-	ok2, _ := limiter.Allow("user1")
+	ok2, _ := limiter.Allow(context.Background(), "user1")
 	if ok2 {
 		t.Error("expected the second request to be denied (bucket should be empty and refillRate=0)")
 	}
@@ -72,16 +73,16 @@ func TestAllow_DeniesWhenBucketIsEmpty(t *testing.T) {
 func TestAllow_DifferentKeysHaveIndependentBuckets(t *testing.T) {
 	limiter := NewInMemoryLimiter(1, 0)
 
-	okA, _ := limiter.Allow("userA")
-	okB, _ := limiter.Allow("userB")
+	okA, _ := limiter.Allow(context.Background(), "userA")
+	okB, _ := limiter.Allow(context.Background(), "userB")
 
 	if !okA || !okB {
 		t.Error("expected both keys to be allowed independently on their first request")
 	}
 
 	// both buckets should now be exhausted, independently
-	okA2, _ := limiter.Allow("userA")
-	okB2, _ := limiter.Allow("userB")
+	okA2, _ := limiter.Allow(context.Background(), "userA")
+	okB2, _ := limiter.Allow(context.Background(), "userB")
 
 	if okA2 || okB2 {
 		t.Error("expected both keys to be denied on their second request, independently of each other")
@@ -96,10 +97,10 @@ func TestAllow_RefillGrantsTokensBackOverTime(t *testing.T) {
 	limiter := NewInMemoryLimiter(2, 10.0)
 
 	// drain the bucket completely
-	limiter.Allow("user1")
-	limiter.Allow("user1")
+	limiter.Allow(context.Background(), "user1")
+	limiter.Allow(context.Background(), "user1")
 
-	ok, _ := limiter.Allow("user1")
+	ok, _ := limiter.Allow(context.Background(), "user1")
 	if ok {
 		t.Fatal("expected the bucket to be empty right after draining it")
 	}
@@ -107,7 +108,7 @@ func TestAllow_RefillGrantsTokensBackOverTime(t *testing.T) {
 	// wait long enough for at least one token to be refilled
 	time.Sleep(150 * time.Millisecond)
 
-	ok2, err := limiter.Allow("user1")
+	ok2, err := limiter.Allow(context.Background(), "user1")
 	if err != nil {
 		t.Fatalf("did not expect an error, got: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestAllow_RefillGrantsTokensBackOverTime(t *testing.T) {
 func TestAllow_TokensNeverExceedMaxTokens(t *testing.T) {
 	limiter := NewInMemoryLimiter(5, 100.0) // fast refill on purpose
 
-	limiter.Allow("user1") // creates the bucket, currentTokens = maxTokens - 1 = 4
+	limiter.Allow(context.Background(), "user1") // creates the bucket, currentTokens = maxTokens - 1 = 4
 
 	// wait long enough that, without a cap, refill would add way more than maxTokens
 	time.Sleep(200 * time.Millisecond)
@@ -129,7 +130,7 @@ func TestAllow_TokensNeverExceedMaxTokens(t *testing.T) {
 	limiter.mu.Unlock()
 
 	// force a refill calculation by making another call, then inspect the internal state
-	limiter.Allow("user1")
+	limiter.Allow(context.Background(), "user1")
 
 	limiter.mu.Lock()
 	tokensAfter := b.currentTokens
@@ -158,7 +159,7 @@ func TestAllow_ConcurrentRequestsNeverExceedCapacity(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < requestsPerGoroutine; j++ {
-				ok, err := limiter.Allow("shared-key")
+				ok, err := limiter.Allow(context.Background(), "shared-key")
 				if err != nil {
 					t.Error(err)
 					return

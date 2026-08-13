@@ -1,10 +1,57 @@
 package ratelimit
 
 import (
+	"context"
+	_ "embed"
 	"sync"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
+
+//go:embed bucket.lua
+var tokenBucketScript string
+
+
 const requestCost = 1.0
+
+
+
+type Limiter interface {
+	Allow(ctx context.Context, key string) (bool, error)
+}
+
+type RedisLimiter struct {
+	client     *redis.Client
+	namespace  string
+	maxTokens  float64
+	refillRate float64
+	script     *redis.Script
+}
+
+func NewRedisLimiter(client *redis.Client, namespace string, maxTokens float64, refillRate float64) *RedisLimiter {
+	script := redis.NewScript(tokenBucketScript)
+	return &RedisLimiter{
+		client:     client,
+		namespace:  namespace,
+		maxTokens:  maxTokens,
+		refillRate: refillRate,
+		script:     script,
+	}
+}
+
+func (l *RedisLimiter) Allow(ctx context.Context, key string) (bool, error) {
+	now := float64(time.Now().Unix())
+	combinedKey := "bucket:" + l.namespace + ":" + key
+
+	result, err := l.script.Run(ctx, l.client, []string{combinedKey}, l.maxTokens, l.refillRate, requestCost, now).Int()
+	if err != nil {
+		return false, err
+	}
+
+	return result == 1, nil
+}
+
 type bucket struct {
 	currentTokens float64
 	lastTimestamp time.Time
@@ -26,7 +73,7 @@ func NewInMemoryLimiter(maxTokens float64, refillRate float64) *InMemoryLimiter 
 	}
 }
 
-func (l *InMemoryLimiter) Allow(key string) (bool, error) {
+func (l *InMemoryLimiter) Allow(ctx context.Context, key string) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
