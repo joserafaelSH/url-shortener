@@ -22,19 +22,26 @@ func TestNewGenerator(t *testing.T) {
 	cases := []struct {
 		name    string
 		nodeID  int64
+		regionID int64
 		wantErr bool
 	}{
-		{"valid nodeID in the middle of the range", 7, false},
-		{"valid nodeID at the lower bound", 0, false},
-		{"valid nodeID at the upper bound", maxNodeID, false},
-		{"nodeID above the maximum", maxNodeID + 1, true},
-		{"nodeID way above the maximum", 999, true},
-		{"negative nodeID", -5, true},
+		{"valid nodeID in the middle of the range", 7, 1, false},
+		{"valid nodeID at the lower bound", 0, 1, false},
+		{"valid nodeID at the upper bound", maxNodeID, 1, false},
+		{"nodeID above the maximum", maxNodeID + 1, 1, true},
+		{"nodeID way above the maximum", 999, 1, true},
+		{"negative nodeID", -5, 1, true},
+		{"valid regionID in the middle of the range", 1, 1, false},
+		{"valid regionID at the lower bound", 1, 0, false},
+		{"valid regionID at the upper bound", 1, maxRegionID, false},
+		{"regionID above the maximum", 1, maxRegionID + 1, true},
+		{"regionID way above the maximum", 1, 999, true},
+		{"negative regionID", 1, -5, true},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			gen, err := NewGenerator(c.nodeID)
+			gen, err := NewGenerator(c.nodeID, c.regionID)
 
 			if c.wantErr {
 				if err == nil {
@@ -62,7 +69,7 @@ func TestNewGenerator(t *testing.T) {
 
 func TestCurrentTimestamp_AdvancesWithRealTime(t *testing.T) {
 
-	g, err := NewGenerator(1)
+	g, err := NewGenerator(1, 1)
 	if err != nil {
 		t.Fatalf("setup failed: %v", err)
 	}
@@ -78,8 +85,8 @@ func TestCurrentTimestamp_AdvancesWithRealTime(t *testing.T) {
 
 func TestCurrentTimestamp_ConsistentAcrossNodes(t *testing.T) {
 
-	g1, _ := NewGenerator(7)
-	g2, _ := NewGenerator(42)
+	g1, _ := NewGenerator(7, 1)
+	g2, _ := NewGenerator(14, 1)
 
 	if g1.currentTimestamp() != g2.currentTimestamp() {
 		t.Error("two nodes sharing the same epoch should read the same timestamp at the same instant")
@@ -90,7 +97,7 @@ func TestCurrentTimestamp_ConsistentAcrossNodes(t *testing.T) {
 
 func TestNextID_ClockMovedBackwards(t *testing.T) {
 
-	g, _ := NewGenerator(1)
+	g, _ := NewGenerator(1, 1)
 
 	// simulate a lastTimestamp "in the future" relative to the current clock
 	g.lastTimestamp = g.currentTimestamp() + 100
@@ -106,7 +113,7 @@ func TestNextID_ClockMovedBackwards(t *testing.T) {
 
 func TestNextID_SequenceIncrementsWithinSameSecond(t *testing.T) {
 
-	g, _ := NewGenerator(1)
+	g, _ := NewGenerator(1, 1)
 
 	var lastSeq int64 = -1
 	for i := 0; i < 5; i++ {
@@ -128,7 +135,7 @@ func TestNextID_SequenceIncrementsWithinSameSecond(t *testing.T) {
 }
 
 func TestNextID_SequenceOverflowWaitsForNextSecond(t *testing.T) {
-	g, _ := NewGenerator(1)
+	g, _ := NewGenerator(1, 1)
 
 	now := g.currentTimestamp()
 	g.lastTimestamp = now
@@ -168,7 +175,7 @@ func TestNextID_NoCollisionsAcrossNodes(t *testing.T) {
 		wg.Add(1)
 		go func(nodeID int64) {
 			defer wg.Done()
-			gen, err := NewGenerator(nodeID)
+			gen, err := NewGenerator(nodeID, 1)
 			if err != nil {
 				t.Error(err)
 				return
@@ -236,5 +243,38 @@ func TestEncodeBase62_OnlyValidAlphabetCharacters(t *testing.T) {
 		if !strings.ContainsRune(base62Alphabet, r) {
 			t.Errorf("character %q is outside the expected base62 alphabet", r)
 		}
+	}
+}
+
+func TestDecodeBase62(t *testing.T) {
+	g, _ := NewGenerator(1, 1)
+	id, _ := g.NextID()
+	decoded, err := DecodeBase62(EncodeBase62(id))
+	if err != nil {
+		t.Errorf("DecodeBase62 failed: %v", err)
+	}
+	if decoded != id {
+		t.Errorf("DecodeBase62 returned %d, expected %d", decoded, id)
+	}
+}
+
+func TestDecodeBase62_InvalidCharacter(t *testing.T) {
+	invalid := "00000$0"
+	_, err := DecodeBase62(invalid)
+	if err == nil {
+		t.Errorf("DecodeBase62 did not return an error for invalid input %q", invalid)
+	}
+}
+
+func TestDecodeRegionID(t *testing.T) {
+	g, _ := NewGenerator(1, 1)
+	id, _ := g.NextID()
+	regionID := (id >> regionShift) & maxRegionID
+	decodedRegionID, err := DecodeRegion(EncodeBase62(id))
+	if err != nil {
+		t.Errorf("DecodeRegion failed: %v", err)
+	}
+	if decodedRegionID != regionID {
+		t.Errorf("DecodeRegion returned %d, expected %d", decodedRegionID, regionID)
 	}
 }
