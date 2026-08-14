@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 )
-
+	
 const (
 	timestampBits  = 30
 	nodeBits       = 4
@@ -17,9 +17,9 @@ const (
 
 	maxNodeID   = -1 ^ (-1 << nodeBits)
 	maxSequence = -1 ^ (-1 << sequenceBits)
-	maxRegionID = -1 ^ (-1 << regionBits)
+	MaxRegionID = -1 ^ (-1 << regionBits)
 	nodeShift   = sequenceBits 
-	regionShift = nodeBits + sequenceBits
+	RegionShift = nodeBits + sequenceBits
 	timestampShift = nodeBits + sequenceBits + regionBits
 )
 
@@ -47,8 +47,8 @@ func NewGenerator(nodeID int64, regionID int64) (*Generator, error) {
 	if nodeID < 0 || nodeID > maxNodeID {
 		return nil, fmt.Errorf("NewGenerator: nodeID{%d} must be between 0 and %d", nodeID	, maxNodeID)
 	}
-	if regionID < 0 || regionID > maxRegionID {
-		return nil, fmt.Errorf("NewGenerator: regionID{%d} must be between 0 and %d", regionID, maxRegionID)
+	if regionID < 0 || regionID > MaxRegionID {
+		return nil, fmt.Errorf("NewGenerator: regionID{%d} must be between 0 and %d", regionID, MaxRegionID)
 	}
 	generator := &Generator{
 		nodeID: nodeID,
@@ -77,6 +77,7 @@ func (g *Generator) NextID() (int64, error) {
 		g.sequence = (g.sequence + 1) & maxSequence
 		if g.sequence == 0 {
 			for currentTimestamp <= g.lastTimestamp {
+				time.Sleep(time.Millisecond)
 				currentTimestamp = g.currentTimestamp()
 			}
 		}
@@ -86,7 +87,7 @@ func (g *Generator) NextID() (int64, error) {
 	}
 	g.lastTimestamp = currentTimestamp
 
-	id := (currentTimestamp << timestampShift) | (g.regionID << regionShift) | (g.nodeID << nodeShift) | g.sequence
+	id := (currentTimestamp << timestampShift) | (g.regionID << RegionShift) | (g.nodeID << nodeShift) | g.sequence
 	return id, nil
 }
 
@@ -137,5 +138,5 @@ func DecodeRegion(shortID string) (int64, error) {
 		return 0, err
 	}
 
-	return (decodedID >> regionShift) & maxRegionID, nil
+	return (decodedID >> RegionShift) & MaxRegionID, nil
 }

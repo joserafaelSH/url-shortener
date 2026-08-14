@@ -20,6 +20,65 @@ jobs:
 
     - name: API
       run: CGO_ENABLED=0 GOOS=linux go build -o api ./cmd/api
-    
+
+    - name: Vet
+      run: go vet ./...
+
     - name: Test
-      run: go test -v ./...
+      run: go test -race -v ./...
+
+  integration-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres_region1:
+        image: postgres:18
+        env:
+          POSTGRES_DB: shard_region_1
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      postgres_region2:
+        image: postgres:18
+        env:
+          POSTGRES_DB: shard_region_2
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: admin
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.26'
+
+    - name: Vet
+      run: go vet -tags=integration ./...
+
+    - name: Integration tests
+      run: go test -race -tags=integration -v ./...

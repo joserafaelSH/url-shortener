@@ -1,7 +1,7 @@
 package http
 
 import (
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 
@@ -18,7 +18,16 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-func rateLimitByIP(rl *ratelimit.RedisLimiter) func(http.Handler) http.Handler {
+func maxBodySize(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func rateLimitByIP(rl ratelimit.Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := clientIP(r)
@@ -26,7 +35,7 @@ func rateLimitByIP(rl *ratelimit.RedisLimiter) func(http.Handler) http.Handler {
 			ok, err := rl.Allow(r.Context(), ip)
 			if err != nil {
 				// fail-open: Redis fora do ar não deveria derrubar a API inteira
-				log.Println("rate limiter indisponível, permitindo por padrão:", err)
+				slog.Warn("rate limiter unavailable, failing open", "error", err)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -42,7 +51,7 @@ func rateLimitByIP(rl *ratelimit.RedisLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-func rateLimitByIPAndLink(rlIP *ratelimit.RedisLimiter, rlLink *ratelimit.RedisLimiter) func(http.Handler) http.Handler {
+func rateLimitByIPAndLink(rlIP ratelimit.Limiter, rlLink ratelimit.Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ip := clientIP(r)
@@ -50,7 +59,7 @@ func rateLimitByIPAndLink(rlIP *ratelimit.RedisLimiter, rlLink *ratelimit.RedisL
 
 			okIP, err := rlIP.Allow(r.Context(), ip)
 			if err != nil {
-				log.Println("rate limiter (IP) indisponível, permitindo por padrão:", err)
+				slog.Warn("rate limiter (IP) unavailable, failing open", "error", err)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -62,7 +71,7 @@ func rateLimitByIPAndLink(rlIP *ratelimit.RedisLimiter, rlLink *ratelimit.RedisL
 
 			okLink, err := rlLink.Allow(r.Context(), shortID)
 			if err != nil {
-				log.Println("rate limiter (link) indisponível, permitindo por padrão:", err)
+				slog.Warn("rate limiter (link) unavailable, failing open", "error", err)
 				next.ServeHTTP(w, r)
 				return
 			}

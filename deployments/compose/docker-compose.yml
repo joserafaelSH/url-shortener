@@ -4,22 +4,42 @@ services:
   # # PostgreSQL
   # ################################################
 
-  # postgres:
-  #   image: postgres:latest
-  #   container_name: postgres
+  postgres_region1:
+    image: postgres:18
+    container_name: postgres_region1
 
-  #   environment:
-  #     POSTGRES_DB: soccer
-  #     POSTGRES_USER: soccer
-  #     POSTGRES_PASSWORD: soccer
+    environment:
+      POSTGRES_DB: shard_region_1
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
 
-  #   ports:
-  #     - "5432:5432"
+    ports:
+      - "5432:5432"
 
-  #   volumes:
-  #     - postgres-data:/var/lib/postgresql
+    volumes:
+      - postgres-region1-data:/var/lib/postgresql
+      - ../../internal/database/postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
 
-  #   restart: unless-stopped
+    restart: unless-stopped
+
+
+  postgres_region2:
+    image: postgres:18
+    container_name: postgres_region2
+
+    environment:
+      POSTGRES_DB: shard_region_2
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - postgres-region2-data:/var/lib/postgresql
+      - ../../internal/database/postgres/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+    restart: unless-stopped
 
   ################################################
   # Redis Cache
@@ -36,9 +56,39 @@ services:
 
     restart: unless-stopped
 
+  ################################################
+  # API
+  ################################################
+
+  api:
+    build:
+      context: ../../
+      dockerfile: deployments/docker/Dockerfile
+    container_name: url_shortener_api
+
+    environment:
+      PORT: "3000"
+      NODE_ID: "1"
+      REGION_ID: "1"
+      REDIS_ADDR: redis-cache:6379
+      POSTGRES_DSN_REGION_1: postgres://admin:admin@postgres_region1:5432/shard_region_1?sslmode=disable
+      POSTGRES_DSN_REGION_2: postgres://admin:admin@postgres_region2:5432/shard_region_2?sslmode=disable
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      - postgres_region1
+      - postgres_region2
+      - redis-cache
+
+    restart: unless-stopped
+
 ################################################
 # Volumes
 ################################################
 
 volumes:
   redis-cache-data:
+  postgres-region1-data:
+  postgres-region2-data:

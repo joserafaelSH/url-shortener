@@ -33,8 +33,8 @@ func TestNewGenerator(t *testing.T) {
 		{"negative nodeID", -5, 1, true},
 		{"valid regionID in the middle of the range", 1, 1, false},
 		{"valid regionID at the lower bound", 1, 0, false},
-		{"valid regionID at the upper bound", 1, maxRegionID, false},
-		{"regionID above the maximum", 1, maxRegionID + 1, true},
+		{"valid regionID at the upper bound", 1, MaxRegionID, false},
+		{"regionID above the maximum", 1, MaxRegionID + 1, true},
 		{"regionID way above the maximum", 1, 999, true},
 		{"negative regionID", 1, -5, true},
 	}
@@ -269,7 +269,7 @@ func TestDecodeBase62_InvalidCharacter(t *testing.T) {
 func TestDecodeRegionID(t *testing.T) {
 	g, _ := NewGenerator(1, 1)
 	id, _ := g.NextID()
-	regionID := (id >> regionShift) & maxRegionID
+	regionID := (id >> RegionShift) & MaxRegionID
 	decodedRegionID, err := DecodeRegion(EncodeBase62(id))
 	if err != nil {
 		t.Errorf("DecodeRegion failed: %v", err)

@@ -2,21 +2,29 @@ package cache
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-func ConnectRedis(addr string) (*redis.Client, error) {
+func ConnectRedis(addr string, timeout time.Duration, retryAttempts int, retryBackoff time.Duration) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{Addr: addr})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	var err error
+	for attempt := 1; attempt <= retryAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		err = client.Ping(ctx).Err()
+		cancel()
+		if err == nil {
+			return client, nil
+		}
 
-	err := client.Ping(ctx).Err()
-	if err != nil {
-		return nil, err
+		slog.Warn("failed to connect to Redis, retrying", "attempt", attempt, "error", err)
+		if attempt < retryAttempts {
+			time.Sleep(retryBackoff)
+		}
 	}
-	return client, nil
 
+	return nil, err
 }
